@@ -1,7 +1,8 @@
-import asyncio
 import time
 import httpx
 import json
+import threading
+import asyncio
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from Crypto.Cipher import AES
@@ -26,7 +27,7 @@ def aes_cbc_encrypt(key: bytes, iv: bytes, plaintext: bytes) -> bytes:
     aes = AES.new(key, AES.MODE_CBC, iv)
     return aes.encrypt(pad(plaintext))
 
-async def json_to_proto(json_data: str, proto_message) -> bytes:
+def json_to_proto_sync(json_data: str, proto_message) -> bytes:
     from google.protobuf import json_format
     json_format.ParseDict(json.loads(json_data), proto_message)
     return proto_message.SerializeToString()
@@ -38,7 +39,7 @@ def decode_protobuf(encoded_data: bytes, message_type) -> dict:
     return json.loads(json_format.MessageToJson(instance))
 
 # === JWT Token Generation ===
-async def generate_jwt_token(uid: str, password: str):
+def generate_jwt_token_sync(uid: str, password: str):
     # Import protobuf modules
     import FreeFire_pb2
     
@@ -55,8 +56,9 @@ async def generate_jwt_token(uid: str, password: str):
         'Content-Type': "application/x-www-form-urlencoded"
     }
     
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(url, data=payload, headers=headers)
+    # Use synchronous HTTP client
+    with httpx.Client() as client:
+        resp = client.post(url, data=payload, headers=headers)
         data = resp.json()
         token_val = data.get("access_token", "0")
         open_id = data.get("open_id", "0")
@@ -69,7 +71,7 @@ async def generate_jwt_token(uid: str, password: str):
         "orign_platform_type": "4"
     })
     
-    proto_bytes = await json_to_proto(body, FreeFire_pb2.LoginReq())
+    proto_bytes = json_to_proto_sync(body, FreeFire_pb2.LoginReq())
     payload_enc = aes_cbc_encrypt(MAIN_KEY, MAIN_IV, proto_bytes)
     
     url = "https://loginbp.ggblueshark.com/MajorLogin"
@@ -84,8 +86,8 @@ async def generate_jwt_token(uid: str, password: str):
         'ReleaseVersion': RELEASEVERSION
     }
     
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(url, data=payload_enc, headers=headers)
+    with httpx.Client() as client:
+        resp = client.post(url, data=payload_enc, headers=headers)
         msg = decode_protobuf(resp.content, FreeFire_pb2.LoginRes)
         
         # Format response as requested
@@ -107,7 +109,7 @@ async def generate_jwt_token(uid: str, password: str):
 
 # === Flask Routes ===
 @app.route('/token', methods=['GET'])
-async def get_jwt_token():
+def get_jwt_token():
     uid = request.args.get('uid')
     password = request.args.get('password')
     
@@ -118,7 +120,7 @@ async def get_jwt_token():
         return jsonify({"error": "Please provide password."}), 400
     
     try:
-        token_data = await generate_jwt_token(uid, password)
+        token_data = generate_jwt_token_sync(uid, password)
         return jsonify(token_data), 200
     
     except Exception as e:
