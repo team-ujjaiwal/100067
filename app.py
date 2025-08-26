@@ -1,6 +1,8 @@
 import time
 import httpx
 import json
+import threading
+import asyncio
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from Crypto.Cipher import AES
@@ -35,22 +37,6 @@ def decode_protobuf(encoded_data: bytes, message_type) -> dict:
     instance = message_type()
     instance.ParseFromString(encoded_data)
     return json.loads(json_format.MessageToJson(instance))
-
-def format_time_remaining(seconds: int) -> str:
-    """Convert seconds to human-readable format: X hour(s) Y minute(s) Z second(s)"""
-    hours = seconds // 3600
-    minutes = (seconds % 3600) // 60
-    secs = seconds % 60
-    
-    parts = []
-    if hours > 0:
-        parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
-    if minutes > 0:
-        parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
-    if secs > 0 or len(parts) == 0:  # Always show at least seconds if no hours/minutes
-        parts.append(f"{secs} second{'s' if secs != 1 else ''}")
-    
-    return " ".join(parts)
 
 # === JWT Token Generation ===
 def generate_jwt_token_sync(uid: str, password: str):
@@ -104,14 +90,6 @@ def generate_jwt_token_sync(uid: str, password: str):
         resp = client.post(url, data=payload_enc, headers=headers)
         msg = decode_protobuf(resp.content, FreeFire_pb2.LoginRes)
         
-        # Get TTL value
-        ttl = msg.get("ttl", 0)
-        
-        # Calculate actual time remaining (this will decrease over time)
-        current_time = int(time.time())
-        expire_time = current_time + ttl
-        time_remaining = expire_time - current_time
-        
         # Format response as requested
         response_data = {
             "accountId": msg.get("accountId", ""),
@@ -122,10 +100,9 @@ def generate_jwt_token_sync(uid: str, password: str):
             "newActiveRegion": msg.get("newActiveRegion", ""),
             "recommendRegions": msg.get("recommendRegions", []),
             "token": msg.get("token", ""),
-            "ttl": ttl,
+            "ttl": msg.get("ttl", 0),
             "serverUrl": msg.get("serverUrl", ""),
-            "expireAt": format_time_remaining(time_remaining),
-            "expireTimestamp": expire_time
+            "expireAt": int(time.time()) + msg.get("ttl", 0)
         }
         
         return response_data
