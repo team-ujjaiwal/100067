@@ -107,6 +107,11 @@ def generate_jwt_token_sync(uid: str, password: str):
         # Get TTL value
         ttl = msg.get("ttl", 0)
         
+        # Calculate actual time remaining (this will decrease over time)
+        current_time = int(time.time())
+        expire_time = current_time + ttl
+        time_remaining = expire_time - current_time
+        
         # Format response as requested
         response_data = {
             "accountId": msg.get("accountId", ""),
@@ -119,7 +124,8 @@ def generate_jwt_token_sync(uid: str, password: str):
             "token": msg.get("token", ""),
             "ttl": ttl,
             "serverUrl": msg.get("serverUrl", ""),
-            "expireAt": format_time_remaining(ttl)
+            "expireAt": format_time_remaining(time_remaining),
+            "expireTimestamp": expire_time
         }
         
         return response_data
